@@ -162,9 +162,43 @@ extern int
 unsigned int gNetifIndex = 0;
 char         gNetifName[IFNAMSIZ];
 
+static otSysTrafficStats sTrafficStats = {
+    0, 0, 0, 0,
+    "-", "-", "-", "-"
+};
+
+static otSysPerDestStats sPerDestStats;
+
+static void UpdateDestTable(otSysDestEntry *aTable, uint16_t *aCount, const char *aDstAddr, uint64_t aBytes)
+{
+    // 既存エントリを検索して更新
+    for (uint16_t i = 0; i < *aCount; i++)
+    {
+        if (strncmp(aTable[i].mDstAddr, aDstAddr, sizeof(aTable[i].mDstAddr)) == 0)
+        {
+            aTable[i].mPackets++;
+            aTable[i].mBytes += aBytes;
+            return;
+        }
+    }
+    // 新規エントリ追加（テーブル満杯の場合は破棄）
+    if (*aCount < OT_SYS_DEST_STATS_MAX)
+    {
+        strncpy(aTable[*aCount].mDstAddr, aDstAddr, sizeof(aTable[*aCount].mDstAddr) - 1);
+        aTable[*aCount].mDstAddr[sizeof(aTable[*aCount].mDstAddr) - 1] = '\0';
+        aTable[*aCount].mPackets = 1;
+        aTable[*aCount].mBytes   = aBytes;
+        (*aCount)++;
+    }
+}
+
 const char *otSysGetThreadNetifName(void) { return gNetifName; }
 
 unsigned int otSysGetThreadNetifIndex(void) { return gNetifIndex; }
+
+const otSysTrafficStats *otSysGetTrafficStats(void) { return &sTrafficStats; }
+
+const otSysPerDestStats *otSysGetPerDestStats(void) { return &sPerDestStats; }
 
 #if OPENTHREAD_CONFIG_PLATFORM_NETIF_ENABLE
 
@@ -1083,6 +1117,20 @@ static void processReceive(otMessage *aMessage, void *aContext)
 
     VerifyOrExit(otMessageRead(aMessage, 0, &packet[offset], maxLength) == length, error = OT_ERROR_NO_BUFS);
 
+    if (length >= 40)
+    {
+        char srcStr[INET6_ADDRSTRLEN];
+        char dstStr[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &packet[offset + 8],  srcStr, sizeof(srcStr));
+        inet_ntop(AF_INET6, &packet[offset + 24], dstStr, sizeof(dstStr));
+        sTrafficStats.mThreadToExternalPackets++;
+        sTrafficStats.mThreadToExternalBytes += length;
+        strncpy(sTrafficStats.mLastThreadToExternalSrc, srcStr, sizeof(sTrafficStats.mLastThreadToExternalSrc) - 1);
+        strncpy(sTrafficStats.mLastThreadToExternalDst, dstStr, sizeof(sTrafficStats.mLastThreadToExternalDst) - 1);
+        UpdateDestTable(sPerDestStats.mThreadToExternal, &sPerDestStats.mThreadToExternalCount, dstStr, length);
+        LogInfo("[TRAFFIC] Thread->External src=%s dst=%s len=%u", srcStr, dstStr, length);
+    }
+
 #if OPENTHREAD_POSIX_LOG_TUN_PACKETS
     LogInfo("Packet from NCP (%u bytes)", static_cast<uint16_t>(length));
     otDumpInfoPlat("", &packet[offset], length);
@@ -1258,6 +1306,20 @@ static void processTransmit(otInstance *aInstance)
 #endif
         VerifyOrExit(message != nullptr, error = OT_ERROR_NO_BUFS);
         otMessageSetOrigin(message, OT_MESSAGE_ORIGIN_HOST_UNTRUSTED);
+    }
+
+    if (rval >= 40)
+    {
+        char srcStr[INET6_ADDRSTRLEN];
+        char dstStr[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, reinterpret_cast<uint8_t *>(&packet[offset]) + 8,  srcStr, sizeof(srcStr));
+        inet_ntop(AF_INET6, reinterpret_cast<uint8_t *>(&packet[offset]) + 24, dstStr, sizeof(dstStr));
+        sTrafficStats.mExternalToThreadPackets++;
+        sTrafficStats.mExternalToThreadBytes += static_cast<uint64_t>(rval);
+        strncpy(sTrafficStats.mLastExternalToThreadSrc, srcStr, sizeof(sTrafficStats.mLastExternalToThreadSrc) - 1);
+        strncpy(sTrafficStats.mLastExternalToThreadDst, dstStr, sizeof(sTrafficStats.mLastExternalToThreadDst) - 1);
+        UpdateDestTable(sPerDestStats.mExternalToThread, &sPerDestStats.mExternalToThreadCount, dstStr, static_cast<uint64_t>(rval));
+        LogInfo("[TRAFFIC] External->Thread src=%s dst=%s len=%zd", srcStr, dstStr, rval);
     }
 
 #if OPENTHREAD_POSIX_LOG_TUN_PACKETS

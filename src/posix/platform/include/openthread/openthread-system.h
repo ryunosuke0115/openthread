@@ -259,6 +259,58 @@ typedef struct otSysInfraNetIfAddressCounters
 void otSysCountInfraNetifAddresses(otSysInfraNetIfAddressCounters *aAddressCounters);
 
 /**
+ * Traffic statistics between Thread network and external IP network.
+ */
+typedef struct otSysTrafficStats
+{
+    uint64_t mThreadToExternalPackets; ///< Packets forwarded from Thread to external network
+    uint64_t mThreadToExternalBytes;   ///< Bytes forwarded from Thread to external network
+    uint64_t mExternalToThreadPackets; ///< Packets forwarded from external network to Thread
+    uint64_t mExternalToThreadBytes;   ///< Bytes forwarded from external network to Thread
+    char mLastThreadToExternalSrc[46]; ///< Last packet src address (Thread->External)
+    char mLastThreadToExternalDst[46]; ///< Last packet dst address (Thread->External)
+    char mLastExternalToThreadSrc[46]; ///< Last packet src address (External->Thread)
+    char mLastExternalToThreadDst[46]; ///< Last packet dst address (External->Thread)
+} otSysTrafficStats;
+
+/**
+ * Returns the traffic statistics between Thread network and external IP network.
+ *
+ * @returns A pointer to the traffic statistics.
+ */
+const otSysTrafficStats *otSysGetTrafficStats(void);
+
+/**
+ * Per-destination traffic entry.
+ */
+#define OT_SYS_DEST_STATS_MAX 64
+
+typedef struct otSysDestEntry
+{
+    char     mDstAddr[46]; ///< Destination IPv6 address string
+    uint64_t mPackets;     ///< Packet count to this destination
+    uint64_t mBytes;       ///< Byte count to this destination
+} otSysDestEntry;
+
+/**
+ * Per-destination traffic statistics table.
+ */
+typedef struct otSysPerDestStats
+{
+    otSysDestEntry mThreadToExternal[OT_SYS_DEST_STATS_MAX]; ///< Thread->External per destination
+    uint16_t       mThreadToExternalCount;                    ///< Number of valid entries
+    otSysDestEntry mExternalToThread[OT_SYS_DEST_STATS_MAX]; ///< External->Thread per destination
+    uint16_t       mExternalToThreadCount;                    ///< Number of valid entries
+} otSysPerDestStats;
+
+/**
+ * Returns the per-destination traffic statistics.
+ *
+ * @returns A pointer to the per-destination traffic statistics.
+ */
+const otSysPerDestStats *otSysGetPerDestStats(void);
+
+/**
  * Sets the infrastructure network interface and the ICMPv6 socket.
  *
  * This function specifies the network interface name and the ICMPv6 socket on that interface. After calling this
