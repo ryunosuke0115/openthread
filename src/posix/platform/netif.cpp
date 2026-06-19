@@ -169,12 +169,13 @@ static otSysTrafficStats sTrafficStats = {
 
 static otSysPerDestStats sPerDestStats;
 
-static void UpdateDestTable(otSysDestEntry *aTable, uint16_t *aCount, const char *aDstAddr, uint64_t aBytes)
+static void UpdateDestTable(otSysDestEntry *aTable, uint16_t *aCount, const char *aSrcAddr, const char *aDstAddr, uint64_t aBytes)
 {
     // 既存エントリを検索して更新
     for (uint16_t i = 0; i < *aCount; i++)
     {
-        if (strncmp(aTable[i].mDstAddr, aDstAddr, sizeof(aTable[i].mDstAddr)) == 0)
+        if (strncmp(aTable[i].mSrcAddr, aSrcAddr, sizeof(aTable[i].mSrcAddr)) == 0 &&
+            strncmp(aTable[i].mDstAddr, aDstAddr, sizeof(aTable[i].mDstAddr)) == 0)
         {
             aTable[i].mPackets++;
             aTable[i].mBytes += aBytes;
@@ -184,7 +185,9 @@ static void UpdateDestTable(otSysDestEntry *aTable, uint16_t *aCount, const char
     // 新規エントリ追加（テーブル満杯の場合は破棄）
     if (*aCount < OT_SYS_DEST_STATS_MAX)
     {
+        strncpy(aTable[*aCount].mSrcAddr, aSrcAddr, sizeof(aTable[*aCount].mSrcAddr) - 1);
         strncpy(aTable[*aCount].mDstAddr, aDstAddr, sizeof(aTable[*aCount].mDstAddr) - 1);
+        aTable[*aCount].mSrcAddr[sizeof(aTable[*aCount].mSrcAddr) - 1] = '\0';
         aTable[*aCount].mDstAddr[sizeof(aTable[*aCount].mDstAddr) - 1] = '\0';
         aTable[*aCount].mPackets = 1;
         aTable[*aCount].mBytes   = aBytes;
@@ -1123,11 +1126,14 @@ static void processReceive(otMessage *aMessage, void *aContext)
         char dstStr[INET6_ADDRSTRLEN];
         inet_ntop(AF_INET6, &packet[offset + 8],  srcStr, sizeof(srcStr));
         inet_ntop(AF_INET6, &packet[offset + 24], dstStr, sizeof(dstStr));
+
         sTrafficStats.mThreadToExternalPackets++;
         sTrafficStats.mThreadToExternalBytes += length;
         strncpy(sTrafficStats.mLastThreadToExternalSrc, srcStr, sizeof(sTrafficStats.mLastThreadToExternalSrc) - 1);
         strncpy(sTrafficStats.mLastThreadToExternalDst, dstStr, sizeof(sTrafficStats.mLastThreadToExternalDst) - 1);
-        UpdateDestTable(sPerDestStats.mThreadToExternal, &sPerDestStats.mThreadToExternalCount, dstStr, length);
+        UpdateDestTable(sPerDestStats.mThreadToExternal,
+                        &sPerDestStats.mThreadToExternalCount,
+                        srcStr, dstStr, length);
         LogInfo("[TRAFFIC] Thread->External src=%s dst=%s len=%u", srcStr, dstStr, length);
     }
 
@@ -1318,7 +1324,10 @@ static void processTransmit(otInstance *aInstance)
         sTrafficStats.mExternalToThreadBytes += static_cast<uint64_t>(rval);
         strncpy(sTrafficStats.mLastExternalToThreadSrc, srcStr, sizeof(sTrafficStats.mLastExternalToThreadSrc) - 1);
         strncpy(sTrafficStats.mLastExternalToThreadDst, dstStr, sizeof(sTrafficStats.mLastExternalToThreadDst) - 1);
-        UpdateDestTable(sPerDestStats.mExternalToThread, &sPerDestStats.mExternalToThreadCount, dstStr, static_cast<uint64_t>(rval));
+        // processTransmit: External→Thread
+        UpdateDestTable(sPerDestStats.mExternalToThread,
+                        &sPerDestStats.mExternalToThreadCount,
+                        srcStr, dstStr, static_cast<uint64_t>(rval));  // src=外部IP, dst=ThreadデバイスIP
         LogInfo("[TRAFFIC] External->Thread src=%s dst=%s len=%zd", srcStr, dstStr, rval);
     }
 

@@ -287,6 +287,7 @@ const otSysTrafficStats *otSysGetTrafficStats(void);
 
 typedef struct otSysDestEntry
 {
+    char     mSrcAddr[46]; ///< Source IPv6 address string
     char     mDstAddr[46]; ///< Destination IPv6 address string
     uint64_t mPackets;     ///< Packet count to this destination
     uint64_t mBytes;       ///< Byte count to this destination
